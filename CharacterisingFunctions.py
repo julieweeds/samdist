@@ -47,6 +47,7 @@ def pmi(wordfreq, refwordfreq, corpussize, refcorpussize):
     return score
 
 
+
 def rev_pmi(wordfreq, refwordfreq, corpussize, refcorpussize):
     return pmi(refwordfreq - wordfreq, refwordfreq, refcorpussize - corpussize, refcorpussize)
 

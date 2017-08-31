@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib as plt
 from collections import defaultdict
 import random
-import spacy,operator,math,json
+import operator,math,json
 import logging
 import configparser,ast,os,sys
 from time import time
@@ -12,7 +12,11 @@ import CharacterisingFunctions as cf
 import warnings
 warnings.filterwarnings('ignore')
 
-from spacy.tokens import Doc
+try:
+    import spacy
+    from spacy.tokens import Doc
+except:
+    print("Warning: Unable to load Spacy library!")
 
 
 class ListTokenizer(object):
@@ -62,6 +66,54 @@ def make_index(columns):
     for i,col in enumerate(columns):
         cindex[col]=i+1
     return cindex
+
+def pmi(value,rowtotal,coltotal,grandtotal):
+
+    if value*rowtotal*coltotal*grandtotal==0:
+        return 0
+    else:
+        return np.log((value*grandtotal)/(rowtotal*coltotal))
+
+def ppmi(value,rowtotal,coltotal,grandtotal):
+    score=pmi(value,rowtotal,coltotal,grandtotal)
+    if score > 0:
+        return score
+    else:
+        return 0
+
+def lpmi(value,rowtotal,coltotal,grandtotal):
+    mypmi=ppmi(value,rowtotal,coltotal,grandtotal)
+    return (value/rowtotal)*mypmi
+
+def compute_score(v,r,c,g,measure="PPMI"):
+    if measure.lower() =="ppmi":
+        return ppmi(v,r,c,g)
+    elif measure.lower()=="pmi":
+        return pmi(v,r,c,g)
+    elif measure.lower()=="lpmi":
+        return lpmi(v,r,c,g)
+    else:
+        print("Error: {} is unknown measure of feature association".format(measure) )
+
+def normalise_mat(amatrix):
+    newmatrix={}
+    for key,featdict in amatrix.items():
+        newmatrix[key]=normalise_vec(featdict)
+    return newmatrix
+
+def normalise_vec(avector):
+    length=compute_length(avector)
+    newvector={}
+    for key,value in avector.items():
+        newvector[key]=value/length
+    return newvector
+
+def compute_length(avector):
+    squaretot=0
+    for v in avector.values():
+        squaretot+=v*v
+
+    return np.sqrt(squaretot)
 
 
 class SamuelsCorpus:
@@ -432,12 +484,13 @@ class Processor(SamuelsCorpus):
 
         return self.features
 
-    def convert_to_ppmi(self, reset=False):
+    def convert_to_ppmi(self, reset=False,measure="PPMI"):
 
         if reset:
             try:
                 del self.pmi_matrix
                 del self.pmi_matrix_byrel
+                del self.rel_matrix
             except:
                 pass
 
@@ -451,10 +504,10 @@ class Processor(SamuelsCorpus):
                 for feat, value in featdict.items():
                     rowtotal = self.rowtotals[key]
                     coltotal = self.columntotals[feat]
-                    pmi = math.log((featdict[feat] * self.grandtotal) / (rowtotal * coltotal))
+                    score=compute_score(featdict[feat],rowtotal,coltotal,self.grandtotal,measure=measure)
 
-                    if pmi > 0:
-                        pmi_feats[feat] = pmi
+                    if score> 0:
+                        pmi_feats[feat] = score
                 self.pmi_matrix[key] = pmi_feats
 
             self.rel_matrix={}
@@ -463,9 +516,10 @@ class Processor(SamuelsCorpus):
                 for feat, value in featdict.items():
                     rowtotal=self.rowtotals[key]
                     coltotal=self.reltotals[feat]
-                    pmi=math.log((featdict[feat]*self.grandtotal)/(rowtotal*coltotal))
-                    if pmi>0:
-                        pmi_feats[feat]=pmi
+                    score=compute_score(featdict[feat],rowtotal,coltotal,self.grandtotal,measure=measure)
+
+                    if score>0:
+                        pmi_feats[feat]=score
                 self.rel_matrix[key]=pmi_feats
 
             self.pmi_matrix_byrel={}
@@ -480,15 +534,24 @@ class Processor(SamuelsCorpus):
                     for feat,value in featdict.items():
                         rowtotal=rowtotals[key]
                         coltotal=columntotals[feat]
+                        score=compute_score(featdict[feat],rowtotal,coltotal,grandtotal,measure=measure)
                         pmi=math.log((featdict[feat]*grandtotal)/(rowtotal*coltotal))
-                        if pmi>0:
-                            pmi_feats[feat]=pmi
+                        if score>0:
+                            pmi_feats[feat]=score
                     pmi_matrix[key]=pmi_feats
                 self.pmi_matrix_byrel[rel]=pmi_matrix
 
             return self.pmi_matrix
 
-    def run(self,field='SEMTAG3'):
+    def normalise(self):
+        #convert all of the vectors in pmi_matrix, rel_matrix and pmi_matrix_byrel into unit vectors
+        self.pmi_matrix=normalise_mat(self.pmi_matrix)
+        self.rel_matrix=normalise_mat(self.rel_matrix)
+        for rel in self.pmi_matrix_byrel.keys():
+            self.pmi_matrix_byrel[rel]=normalise_mat(self.pmi_matrix_byrel[rel])
+
+    def run(self,field='SEMTAG3',measure="PPMI",normalise=True):
+        #setting normalise =True means that vectors will be unit vectors i.e., cosine will equal dot product
 
         print("Adding Spacy annotations")
         self.cdf=self.get_combined(reset=True)
@@ -497,8 +560,11 @@ class Processor(SamuelsCorpus):
 
         print("Extracting dependency features")
         self.extract(field=field,reset=True)
-        print("Converting to PPMI")
-        ppmi_matrix=self.convert_to_ppmi(reset=True)
+        print("Converting to {}".format(measure))
+        ppmi_matrix=self.convert_to_ppmi(reset=True,measure=measure)
+        if normalise:
+            print("Normalising vectors to unit length")
+            self.normalise()
         with open(self.ppmimatfile,'w') as outstream:
             json.dump(ppmi_matrix,outstream)
 
@@ -756,10 +822,8 @@ class Comparator:
 
         self.filedict=filedict
         self.parentdir=parentdir
-
+        self.colors = ['r', 'b', 'g', 'y']
         self.viewerdict=self.init_viewers()
-        self.colors=['r','b','g','y']
-
 
     def init_viewers(self):
 
