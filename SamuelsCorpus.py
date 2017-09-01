@@ -709,18 +709,67 @@ class Viewer(SamuelsCorpus):
             occurrences=df[df[field]==withtag]
             chunks=list(occurrences['chunk'])
             ids=list(occurrences['id'])
-            occurrences=df[df['chunk'].isin(chunks)][df['gram_head'].isin(ids)][df[field]==semtag]
 
+            occurrences=df[df['chunk'].isin(chunks)][df['gram_head'].isin(ids)][df[field]==semtag][df['gram_dep']==rel]
+            #need to eliminate chance overlap between different chunks and ids
+
+            cdict={}
+            for i,c in enumerate(chunks):
+                sofar=cdict.get(c,[])
+                sofar.append(i)
+                cdict[c]=sofar
+            hdict={}
+            for i,h in enumerate(ids):
+                sofar=hdict.get(h,[])
+                sofar.append(i)
+                hdict[h]=sofar
+
+            okids=[]
+            for occ in occurrences.itertuples():
+                #print(occ[3],occ[19])
+                #print(cdict.get(occ[3],-1),hdict.get(occ[19],-2))
+                cplace=cdict.get(occ[3],[])
+                hplace=hdict.get(occ[19],[])
+                for c in cplace:
+                    for h in hplace:
+                        if c==h:
+                            okids.append(occ[2])
+            #occurrences=df[df['fileid'].isin(okids)][df['chunk'].isin(chunks)][df['gram_head'].isin(ids)][df[field]==semtag][df['gram_dep']==rel]
+            occurrences=occurrences[occurrences['fileid'].isin(okids)]
         else:
             occurrences=df[df[field]==withtag][df['gram_dep']==rel]
             chunks=list(occurrences['chunk'])
             heads=list(occurrences['gram_head'])
             occurrences=df[df['chunk'].isin(chunks)][df['id'].isin(heads)][df[field]==semtag]
 
+            #filtering of chance overlaps
+            cdict = {}
+            for i, c in enumerate(chunks):
+                sofar=cdict.get(c,[])
+                sofar.append(i)
+                cdict[c] = sofar
+            hdict = {}
+            for i, h in enumerate(heads):
+                sofar=hdict.get(h,[])
+                sofar.append(i)
+                hdict[h] = sofar
+            okids=[]
+            for occ in occurrences.itertuples():
+                cplace=cdict.get(occ[3],[])
+                hplace=hdict.get(occ[5],[])
+                for c in cplace:
+                    for h in hplace:
+                        if c==h:
+                            okids.append(occ[2])
+            occurrences=occurrences[occurrences['fileid'].isin(okids)]
+
+
         if self.lowercase:
             groupby='vard_lower'
         else:
             groupby='vard'
+
+        #print(occurrences)
         mylemmas=occurrences.groupby(groupby)['fileid'].nunique()
         mylemmas=mylemmas.sort_values(ascending=False)
         mylist=list(mylemmas[0:10].index.values)
