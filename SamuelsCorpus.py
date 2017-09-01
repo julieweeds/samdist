@@ -115,6 +115,23 @@ def compute_length(avector):
 
     return np.sqrt(squaretot)
 
+def vectorsim(v1,v2,measure="dot"):
+    if measure.lower() =="dot":
+        return vectordot(v1,v2)
+    elif measure.lower() == "cos" or measure.lower() =="cosine":
+        #assuming that the vectors are unit vectors, this is the same as dot
+        return vectordot(v1,v2)
+    else:
+        print("Error: {} is unknown similarity measure".format(measure))
+        return 0
+
+def vectordot(v1,v2):
+    score=0
+    for key,value in v1.items():
+        value2=v2.get(key,0)
+        score+=value*value2
+    return score
+
 
 class SamuelsCorpus:
     alias = {'q#TOTEN': 'vard', '#TOTEN': 'vard'}
@@ -561,12 +578,12 @@ class Processor(SamuelsCorpus):
         print("Extracting dependency features")
         self.extract(field=field,reset=True)
         print("Converting to {}".format(measure))
-        ppmi_matrix=self.convert_to_ppmi(reset=True,measure=measure)
+        self.pmi_matrix=self.convert_to_ppmi(reset=True,measure=measure)
         if normalise:
             print("Normalising vectors to unit length")
             self.normalise()
         with open(self.ppmimatfile,'w') as outstream:
-            json.dump(ppmi_matrix,outstream)
+            json.dump(self.pmi_matrix,outstream)
 
         with open(self.ppmibyrel,'w') as outstream:
             json.dump(self.pmi_matrix_byrel,outstream)
@@ -853,6 +870,32 @@ class Viewer(SamuelsCorpus):
             cf.display_list([(-1,candidates)],cutoff=cutoff,xlabel='Top relations for {}'.format(key),ylabel='PPMI Score',colors=self.colors)
         return candidates[0:cutoff]
 
+    def find_similarity(self,key1,key2,rel=None,field='SEMTAG3',measure="dot"):
+
+        try:
+            featdict1=self.get_vector(key1,rel=rel,field=field)
+            featdict2=self.get_vector(key2,rel=rel,field=field)
+            return vectorsim(featdict1,featdict2,measure=measure)
+        except:
+            print("Error: can't find vectors for those tags and relation")
+            return 0
+
+    def find_knn(self,key1,rel=None,field='SEMTAG3',measure='dot',k=10):
+        key1=self.match_tag(key1,field=field)
+        if rel==None:
+            pmi_matrix=self.get_pmimatrix()
+        else:
+            pmi_matrix=self.get_pmimatrix_byrel(rel)
+
+        sims=[]
+        for key2 in pmi_matrix.keys():
+            try:
+                sims.append((key2,vectorsim(pmi_matrix[key1],pmi_matrix[key2],measure=measure)))
+            except:
+                print("Error: can't find vector for {} in pmi_matrix for relation {}".format(key1,rel))
+        #print(sims)
+        candidates=sorted(sims,key=operator.itemgetter(1),reverse=True)
+        return candidates[:k]
 
 
     def get_best_features_all(self, cutoff=10):
@@ -863,6 +906,13 @@ class Viewer(SamuelsCorpus):
             best[key] = self.get_top_features(self, key, cutoff=cutoff)
 
         return best
+
+    def get_vector(self,key,field='SEMTAG3',rel=None):
+        key=self.match_tag(key,field=field)
+        if rel==None:
+            return self.get_pmimatrix()[key]
+        else:
+            return self.get_pmimatrix_byrel(rel)[key]
 
 
 class Comparator:
@@ -906,3 +956,35 @@ class Comparator:
             cf.display_list([(-1,distinctive_tags)],cutoff=cutoff,xlabel=field+' (Characteristic)',ylabel=measure+" (Score)")
 
         return distinctive_tags
+
+    def find_similarity(self,key,field='SEMTAG3',measure='dot',rel=None):
+
+        v1=self.viewerdict.values(0).get_vector(key,field=field,rel=rel)
+
+        v2=self.viewerdict.values(1).get_vector(key,field=field,rel=rel)
+        sim=vectorsim(v1,v2,measure=measure)
+        return sim
+
+    def sim_changes(self,measure='dot',rel=None,k=10):
+        if rel==None:
+            mat1=self.viewerdict.values(0).get_pmimatrix()
+            mat2=self.viewerdict.values(1).get_pmimatrix()
+        else:
+            mat1=self.viewerdict.values(0).get_pmimatrix_byrel(rel)
+            mat2=self.viewerdict.values(1).get_pmimatrix_byrel(rel)
+
+        sims=[]
+        for tag in mat1.keys():
+            v1=mat1[tag]
+            v2=mat2.get(tag,{})
+            sims.append((tag,vectorsim(v1,v2,measure=measure)))
+
+        candidates=sorted(sims,key=operator.itemgetter(1),reverse=True)
+
+        print("Most changed:")
+        print(candidates[:k])
+        print("--------")
+        print("Least changed:")
+        print(candidates[-k:])
+
+
