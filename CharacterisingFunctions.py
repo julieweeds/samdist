@@ -169,7 +169,7 @@ def autolabel(rects, ax):
                 ha='center', va='bottom')
     return (maxheight+add)*1.1
 
-def display_list(hfw_list,cutoff=10,words=[],leg=None,title=None,ylim=10,abbrevx=True,xlabel='High Frequency Words',ylabel='Probability',colors=None):
+def display_list(hfw_list,cutoff=10,words=[],leg=None,title=None,ylim=10,abbrevx=True,xlabel='High Frequency Words',ylabel='Probability',colors=None,fontsize=20):
     width=0.7/len(hfw_list)
     toplot=[]
     for hfw in hfw_list:
@@ -200,13 +200,13 @@ def display_list(hfw_list,cutoff=10,words=[],leg=None,title=None,ylim=10,abbrevx
         rectset.append(ax.bar(ind+i*width,ps,width,color=colors[i]))
     
     if leg!=None:
-        ax.legend(rectset,leg)
+        ax.legend(rectset,leg,fontsize=fontsize)
     ax.set_xticks(ind)
     if abbrevx:
         xs=[x.split(' ')[0] for x in xs]
     ax.set_xticklabels(xs)
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
+    ax.set_xlabel(xlabel,fontsize=fontsize)
+    ax.set_ylabel(ylabel,fontsize=fontsize)
     for rects in rectset:
         ylim=autolabel(rects,ax)
     if title!=None:

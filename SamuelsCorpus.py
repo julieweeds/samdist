@@ -786,7 +786,7 @@ class Viewer(SamuelsCorpus):
         else:
             groupby='vard'
 
-        #print(occurrences)
+        print(occurrences.groupby(groupby)['fileid'].unique())
         mylemmas=occurrences.groupby(groupby)['fileid'].nunique()
         mylemmas=mylemmas.sort_values(ascending=False)
         mylist=list(mylemmas[0:10].index.values)
@@ -942,7 +942,7 @@ class Comparator:
 
         return Viewer(df,refdf=True)
 
-    def compute_surprises(self,key,field='SEMTAG3',measure='llr',cutoff=0,displaygraph=False):
+    def compute_surprises(self,key,field='SEMTAG3',measure='llr',cutoff=0,displaygraph=False,fontsize=20):
         tagbag=self.viewerdict[key].make_bow(field=field)
         reftagbag=self.get_reference_viewer().make_bow(field=field)
 
@@ -953,7 +953,7 @@ class Comparator:
                 print("({}, {}) : {}".format(tag,score,self.viewerdict[key].find_text(tag,field=field)))
 
         if displaygraph and len(distinctive_tags)>0:
-            cf.display_list([(-1,distinctive_tags)],cutoff=cutoff,xlabel=field+' (Characteristic)',ylabel=measure+" (Score)")
+            cf.display_list([(-1,distinctive_tags)],cutoff=cutoff,xlabel=field+' (Characteristic)',ylabel=measure+" (Score)",fontsize=20)
 
         return distinctive_tags
 
