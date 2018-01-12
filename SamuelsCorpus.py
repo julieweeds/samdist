@@ -572,7 +572,7 @@ class Processor(SamuelsCorpus):
 
         print("Adding Spacy annotations")
         self.cdf=self.get_combined(reset=True)
-        self.cdf.to_csv(self.outfile,na_rep='NULL')
+        self.cdf.to_csv(self.outfile,na_rep='NULL',index_label='UID')
         self.columnindex=make_index(self.cdf.columns)
 
         print("Extracting dependency features")
@@ -602,7 +602,7 @@ class Viewer(SamuelsCorpus):
         self.lowercase=lowercase
         self.parentdir=parentdir
         self.colors=colors
-
+        self.selected=[]
         if refdf:
             self.dataframe=infile
             self.columnindex=make_index(self.dataframe.columns)
@@ -676,7 +676,8 @@ class Viewer(SamuelsCorpus):
         if self.lowercase and field == 'vard':
             field = 'vard_lower'
         for item in df[field]:
-            sumdict[item] = sumdict.get(item, 0) + 1
+            sumdict[item] = sumdict.get(item, 0) + 1  
+            #TO DO: store a list of indices as well as /as opposed to the number of occurrences 
             corpussize += 1
 
         print("Size of corpus is {}".format(corpussize))
@@ -691,7 +692,7 @@ class Viewer(SamuelsCorpus):
         return corpussize, candidates[:k]
 
     def find_text(self, semtag, field='SEMTAG3'):
-
+        self.selected=[]
         # return hf word distribution for given tag
         #print(semtag)
         semtag = self.match_tag(semtag, field=field)
@@ -701,14 +702,20 @@ class Viewer(SamuelsCorpus):
             groupby = 'vard_lower'
         else:
             groupby = 'vard'
-        mylemmas = df[df[field] == semtag].groupby(groupby)['fileid'].nunique()
+
+        selected=df[df[field]==semtag].groupby(groupby)['UID'].unique()
+        for thing in selected:
+            self.selected+=thing.tolist()
+
+
+        mylemmas = df[df[field] == semtag].groupby(groupby)['UID'].nunique()
         mylemmas = mylemmas.sort_values(ascending=False)
         # print(mylemmas)
         mylist = list(mylemmas[0:10].index.values)
         mylist = [(t, mylemmas[t]) for t in mylist]
         return mylist
 
-    def find_specific_text(self,semtag,withtag,rel,field='SEMTAG3'):
+    def find_specific_text(self,semtag,withtag,rel,field='SEMTAG3',display=True,examples=1,window=10):
 
         semtag=self.match_tag(semtag,field=field)
         withtag=self.match_tag(withtag,field=field)
@@ -786,8 +793,11 @@ class Viewer(SamuelsCorpus):
         else:
             groupby='vard'
 
-        print(occurrences.groupby(groupby)['fileid'].unique())
-        mylemmas=occurrences.groupby(groupby)['fileid'].nunique()
+        #print(occurrences.groupby(groupby)['UID'].unique())
+        self.selected=occurrences.groupby(groupby)['UID'].unique()[0]
+        if display and examples>0:
+            self.display_selected(cutoff=examples,window=window)
+        mylemmas=occurrences.groupby(groupby)['UID'].nunique()
         mylemmas=mylemmas.sort_values(ascending=False)
         mylist=list(mylemmas[0:10].index.values)
         mylist=[(t,mylemmas[t]) for t in mylist]
@@ -818,19 +828,60 @@ class Viewer(SamuelsCorpus):
     def find_tags(self, word, field='SEMTAG3'):
         # find the tags given to a given word
 
+        self.selected=[]
         if self.lowercase:
             sourcefield = 'vard_lower'
         else:
             sourcefield = 'vard'
 
         df = self.get_dataframe()
-        mytags = df[df[sourcefield] == word].groupby(field)['fileid'].nunique()
+        selected=df[df[sourcefield]==word].groupby(field)['UID'].unique()
+        for alist in selected:
+            self.selected+=alist.tolist()
+        #print(len(self.selected))
+        #print(self.selected)
+        mytags = df[df[sourcefield] == word].groupby(field)['UID'].nunique()
         mytags = mytags.sort_values(ascending=False)
         mylist = list(mytags[0:10].index.values)
         mylist = [(t, mytags[t]) for t in mylist]
         return mylist
 
-    def get_top_features(self, key, rel=None,cutoff=10,field='SEMTAG3',displaygraph=False):
+    def display_tags(self,word,field='SEMTAG3',value='',window=10,cutoff=10):
+        tags=self.find_tags(word,field=field)
+        print(tags)
+        return self.display_selected(field=field,window=window,value=value,cutoff=cutoff)
+
+
+    def display_selected(self,field='SEMTAG3',value='',window=10,cutoff=10):
+        df = self.get_dataframe()
+        if value != '':
+            value =self.match_tag(value,field=field)
+            selected = df[df[field]==value]['UID'].unique().tolist()
+            #print(selected)
+            #mylist=[]
+            #for alist in selected.tolist():
+            #    mylist+=alist
+            todisplay=[]
+            for uid in self.selected:
+                if uid in selected:
+                    todisplay.append(uid)
+        else:
+            todisplay=self.selected
+        examples=[]
+        if cutoff>0:
+            todisplay=todisplay[:cutoff]
+        for head in todisplay:
+            headrange=np.arange(int(head)-window,int(head)+window)
+            selected=df[df['UID'].isin(headrange)]['vard']
+            #print(selected)
+            mystring="<"+str(head)+">: "
+            for token in selected:
+                mystring+=token+" "
+            print(mystring)
+            examples.append(mystring)
+        return(examples)
+
+    def get_top_features(self, key, rel=None,cutoff=10,field='SEMTAG3',displaygraph=False,display=True,examples=3,window=10):
 
         key=self.match_tag(key,field=field)
 
@@ -852,7 +903,8 @@ class Viewer(SamuelsCorpus):
             else:
                 candtag=cand
                 r=rel
-            print("({},{}) : {}".format(cand,score,self.find_specific_text(candtag,key,r,field=field)))
+            print("({},{}) : {}".format(cand,score,self.find_specific_text(candtag,key,r,field=field,display=display,examples=examples,window=window)))
+            ##TODO: need to think what to do with self.selected so that this can be explored more later
 
         if displaygraph:
             cf.display_list([(-1,candidates)],cutoff=cutoff,xlabel=xlabel,ylabel='PPMI Score',colors=self.colors)
@@ -953,7 +1005,7 @@ class Comparator:
                 print("({}, {}) : {}".format(tag,score,self.viewerdict[key].find_text(tag,field=field)))
 
         if displaygraph and len(distinctive_tags)>0:
-            cf.display_list([(-1,distinctive_tags)],cutoff=cutoff,xlabel=field+' (Characteristic)',ylabel=measure+" (Score)",fontsize=20)
+            cf.display_list([(-1,distinctive_tags)],cutoff=cutoff,xlabel=field+' (Characteristic)',ylabel=measure+" (Score)",fontsize=fontsize)
 
         return distinctive_tags
 

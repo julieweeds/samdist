@@ -204,7 +204,7 @@ def display_list(hfw_list,cutoff=10,words=[],leg=None,title=None,ylim=10,abbrevx
     ax.set_xticks(ind)
     if abbrevx:
         xs=[x.split(' ')[0] for x in xs]
-    ax.set_xticklabels(xs)
+    ax.set_xticklabels(xs,fontsize=fontsize)
     ax.set_xlabel(xlabel,fontsize=fontsize)
     ax.set_ylabel(ylabel,fontsize=fontsize)
     for rects in rectset:
