@@ -52,6 +52,16 @@ def rev_pmi(wordfreq, refwordfreq, corpussize, refcorpussize):
     return pmi(refwordfreq - wordfreq, refwordfreq, refcorpussize - corpussize, refcorpussize)
 
 
+def easy_pmi(wordfreq_inA,wordfreq_inOther,otherfreq_inA,otherfreq_inOther):
+    if wordfreq_inA*wordfreq_inOther*otherfreq_inA*otherfreq_inOther==0:
+        score =0
+    else:
+        rowtotal=wordfreq_inA+wordfreq_inOther
+        coltotal=wordfreq_inA+otherfreq_inA
+        grandtotal=wordfreq_inA+wordfreq_inOther+otherfreq_inA+otherfreq_inOther
+        score=np.log((wordfreq_inA*grandtotal)/(rowtotal*coltotal))
+    return score
+
 def llr(wordfreq, refwordfreq, corpussize, refcorpussize):
     # print(wordfreq,refwordfreq,corpussize,refcorpussize)
     mypmi = pmi(wordfreq, refwordfreq, corpussize, refcorpussize)
@@ -63,6 +73,22 @@ def llr(wordfreq, refwordfreq, corpussize, refcorpussize):
         return -llr_score
     else:
         return llr_score
+    
+def easy_llr(wordfreq,refwordfreq,corpussize,refcorpussize):
+    elements=[[wordfreq,refwordfreq-wordfreq],[corpussize-wordfreq,refcorpussize-corpussize-refwordfreq+wordfreq]]
+    mypmis=[]
+    for i,row in enumerate(elements):
+        otherrow=1-i
+        for j,item in enumerate(row):
+            otheritem=1-j
+            mypmis.append(item*easy_pmi(item,row[otheritem],elements[otherrow][j],elements[otherrow][otheritem]))
+    llr_score=sum(mypmis)
+    if mypmis[0]<0:
+        return -llr_score
+    else:
+        return llr_score
+            
+            
 
 
 def klp(p, q):
@@ -105,8 +131,11 @@ def likelihoodlift(wordfreq, refwordfreq, corpussize, refcorpussize, alpha):
 def mysurprise(wf, rwf, cs, rcs, measure, params):
     if measure == 'pmi':
         return pmi(wf, rwf, cs, rcs)
-    elif measure == 'llr':
+    
+    elif measure == 'llr_old':
         return llr(wf, rwf, cs, rcs)
+    elif measure == 'llr':
+        return easy_llr(wf,rwf,cs,rcs)
     elif measure == 'kl':
         return kl(wf, rwf, cs, rcs)
     elif measure == 'jsd':
@@ -136,9 +165,9 @@ def improved_compute_surprises(corpusA, corpusB, measure, params={},k=50,display
         print("Top {} terms are ".format(k))
         print(sortedscores[:k])
     rank = 0
-    if measure == "llr":
+    if measure.startswith("llr"):
         for (term, score) in sortedscores:
-            if score > 10.828:
+            if score > 32:  #CV of 32 required rather than 10.828 using Bonferroni Correction (divide significance by number of tests carried out)
                 rank += 1
             else:
                 break
