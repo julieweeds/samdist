@@ -922,6 +922,33 @@ class Viewer(SamuelsCorpus):
             cf.display_list([(-1,candidates)],cutoff=cutoff,xlabel='Top relations for {}'.format(key),ylabel='PPMI Score',colors=self.colors)
         return candidates[0:cutoff]
 
+    def compare_relations(self,keylist,cutoff=10,field='SEMTAG3',displaygraph=True):
+        keylist=[self.match_tag(key,field=field)for key in keylist]
+        featdicts=[self.get_relmatrix()[key] for key in keylist]
+        #allcandidates=[sorted(featdict.items(),key=operator.itemgetter(0)) for featdict in featdicts]
+        allkeys=sorted(set(list(featdicts[0].keys())+list(featdicts[1].keys())))
+
+        differences=[]
+        absdiffs=[]
+        for akey in allkeys:
+            diff=featdicts[0].get(akey,0)-featdicts[1].get(akey,0)
+            differences.append((akey,diff))
+            absdiffs.append(abs(diff))
+
+        tokeep=sorted(absdiffs,reverse=True)[:cutoff]
+        candidates=[]
+        for (akey,diff) in differences:
+            if abs(diff) >= tokeep[-1]:
+                candidates.append((akey,diff))
+                print("({},{})".format(akey,diff))
+
+        if displaygraph:
+            cf.display_comp(candidates,leg=keylist,xlabel="Comparing relations for {} vs {}".format(keylist[0],keylist[1]),ylabel='Difference in PPMI Score',colors=None)
+
+        return candidates
+
+
+
     def find_similarity(self,key1,key2,rel=None,field='SEMTAG3',measure="dot"):
 
         try:

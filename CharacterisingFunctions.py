@@ -182,7 +182,7 @@ def autolabel(rects, ax):
     Attach a text label above each bar displaying its height
     """
 
-    maxheight=np.array([rect.get_height() for rect in rects]).max()
+    maxheight=np.array([abs(rect.get_height()) for rect in rects]).max()
     if maxheight>1:
         aformat='%1.1f'
         add=math.log(maxheight,10)
@@ -193,9 +193,14 @@ def autolabel(rects, ax):
     #print(maxheight,aformat)
     for rect in rects:
         height = rect.get_height()
-        ax.text(rect.get_x() + rect.get_width() / 2., height + add,
-                aformat % height,
-                ha='center', va='bottom')
+        if height >0:
+            ax.text(rect.get_x() + rect.get_width() / 2., height + add,
+                    aformat % height,
+                    ha='center', va='bottom')
+        elif height <0:
+            ax.text(rect.get_x() + rect.get_width() / 2., height - 30*add,
+                    aformat % height,
+                    ha='center', va='bottom')
     return (maxheight+add)*1.1
 
 def display_list(hfw_list,cutoff=10,words=[],leg=None,title=None,ylim=10,abbrevx=True,xlabel='High Frequency Words',ylabel='Probability',colors=None,fontsize=20):
@@ -244,8 +249,51 @@ def display_list(hfw_list,cutoff=10,words=[],leg=None,title=None,ylim=10,abbrevx
 
 
     return xs
-    
 
+
+def display_comp(todisplay, leg=None, title=None, ylim=1, abbrevx=True,
+                 xlabel='Comparison', ylabel='PMI', colors=None, fontsize=18):
+
+    width=0.8
+
+    xs, ys = [*zip(*todisplay)]
+    #print(xs,ys)
+    toplot=[[],[]]
+    for y in ys:
+        if y>0:
+            toplot[0].append(y)
+            toplot[1].append(0)
+        else:
+            toplot[0].append(0)
+            toplot[1].append(y)
+
+    #print(toplot)
+    N = len(xs)
+    ind = np.arange(N)
+    fig, ax = plt.subplots(figsize=(20,5))
+    rectset = []
+    if colors == None:
+        colors = ['r', 'b', 'y', 'g']
+    for i, ps in enumerate(toplot):
+        rectset.append(ax.bar(ind, ps, width, color=colors[i]))
+
+    if leg != None:
+        ax.legend(rectset, leg, fontsize=fontsize)
+    ax.set_xticks(ind)
+    if abbrevx:
+        xs = [x.split(' ')[0] for x in xs]
+    ax.set_xticklabels(xs, fontsize=fontsize)
+    ax.set_xlabel(xlabel, fontsize=fontsize)
+    ax.set_ylabel(ylabel, fontsize=fontsize)
+    ylims=[]
+    for rects in rectset:
+        ylims.append(autolabel(rects, ax))
+    if title != None:
+        ax.set_title(title)
+    #print(ylims)
+    ax.set_ylim(-max(ylims), max(ylims))
+
+    return xs
 
 def improved_display_list(xvalues, yvalueslist, labels={}):
     width = 0.7 / len(yvalueslist)
