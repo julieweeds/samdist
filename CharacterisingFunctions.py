@@ -198,7 +198,7 @@ def autolabel(rects, ax):
                     aformat % height,
                     ha='center', va='bottom')
         elif height <0:
-            ax.text(rect.get_x() + rect.get_width() / 2., height - 30*add,
+            ax.text(rect.get_x() + rect.get_width() / 2., height - 100*add,
                     aformat % height,
                     ha='center', va='bottom')
     return (maxheight+add)*1.1

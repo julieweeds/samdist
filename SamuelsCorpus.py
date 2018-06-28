@@ -947,7 +947,51 @@ class Viewer(SamuelsCorpus):
 
         return candidates
 
+    def compare_features(self,keylist,cutoff=10,field='SEMTAG3',displaygraph=True,rel=None):
+        #for a pair of concepts (and a given relation) - what are the salient features in their intersection and differences?
+        #how best to display this?   Product and differences?  Product basically mimics dot product used in cosine.  Vectors normalised so cosine is dot product
+        keylist = [self.match_tag(key, field=field) for key in keylist]
+        if rel == None:
+            featdicts = [self.get_pmimatrix()[key] for key in keylist]
+            xlabel = "{} co-occurring with {} vs {}".format(field, keylist[0],keylist[1])
+        else:
+            featdicts = [self.get_pmimatrix_byrel(rel)[key] for key in keylist]
+            xlabel = "{} co-occurring with {} vs {} in relation {}".format(field, keylist[0],keylist[1], rel)
 
+        allkeys = sorted(set(list(featdicts[0].keys()) + list(featdicts[1].keys())))
+
+        differences = []
+        absdiffs = []
+        products=[]
+        for akey in allkeys:
+            valueA=featdicts[0].get(akey,0)
+            valueB=featdicts[1].get(akey,0)
+            diff = valueA-valueB
+            differences.append((akey, diff))
+            absdiffs.append(abs(diff))
+            products.append((akey, valueA*valueB))
+
+        products=sorted(products,key=operator.itemgetter(1),reverse=True)[:cutoff]
+        print("Salient products")
+        print(products)
+        if displaygraph:
+            cf.display_list([(-1, products)], cutoff=cutoff, xlabel='Most salient features in intersection of {} and {}'.format(keylist[0],keylist[1]),
+                            ylabel='PPMI Score', colors=self.colors)
+
+        tokeep=sorted(absdiffs,reverse=True)[:cutoff]
+        candidates = []
+        print("Salient differences")
+        for (akey, diff) in differences:
+            if abs(diff) >= tokeep[-1]:
+                candidates.append((akey, diff))
+                print("({},{})".format(akey, diff))
+
+        if displaygraph:
+            cf.display_comp(candidates, leg=keylist,
+                            xlabel=xlabel,
+                            ylabel='Difference in PPMI Score', colors=None)
+
+        return candidates
 
     def find_similarity(self,key1,key2,rel=None,field='SEMTAG3',measure="dot"):
 
