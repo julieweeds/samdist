@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np
-import matplotlib as plt
 from collections import defaultdict
 import random
 import operator,math,json
@@ -131,6 +130,45 @@ def vectordot(v1,v2):
         value2=v2.get(key,0)
         score+=value*value2
     return score
+
+def compare_features(keylist,featdicts,cutoff=10,displaygraph=True,colors=None):
+    #for a pair of vectors  - what are the salient features in their intersection and differences?
+    #how best to display this?   Product and differences?  Product basically mimics dot product used in cosine.  Vectors normalised so cosine is dot product
+
+    allkeys = sorted(set(list(featdicts[0].keys()) + list(featdicts[1].keys())))
+
+    differences = []
+    absdiffs = []
+    products=[]
+    for akey in allkeys:
+        valueA=featdicts[0].get(akey,0)
+        valueB=featdicts[1].get(akey,0)
+        diff = valueA-valueB
+        differences.append((akey, diff))
+        absdiffs.append(abs(diff))
+        products.append((akey, valueA*valueB))
+
+    products=sorted(products,key=operator.itemgetter(1),reverse=True)[:cutoff]
+    print("Salient products")
+    print(products)
+    if displaygraph:
+        cf.display_list([(-1, products)], cutoff=cutoff, xlabel='Most salient features in intersection of {} and {}'.format(keylist[0],keylist[1]),
+                        ylabel='PPMI Score', colors=colors)
+
+    tokeep=sorted(absdiffs,reverse=True)[:cutoff]
+    candidates = []
+    print("Salient differences")
+    for (akey, diff) in differences:
+        if abs(diff) >= tokeep[-1]:
+            candidates.append((akey, diff))
+            print("({},{})".format(akey, diff))
+
+    if displaygraph:
+        cf.display_comp(candidates, leg=keylist,
+                            xlabel='Most salient features in difference of {} and {}'.format(keylist[0],keylist[1]),
+                            ylabel='Difference in PPMI Score', colors=None)
+
+    return candidates
 
 
 class SamuelsCorpus:
@@ -603,6 +641,8 @@ class Viewer(SamuelsCorpus):
         self.parentdir=parentdir
         self.colors=colors
         self.selected=[]
+        self.sims={}
+        self.tagbag=None #store the name of field for which tagbag has been generated
         if refdf:
             self.dataframe=infile
             self.columnindex=make_index(self.dataframe.columns)
@@ -666,30 +706,46 @@ class Viewer(SamuelsCorpus):
             print("Error retrieving pmi by rel matrix for {} : Unknown relation".format(rel))
 
 
-    def make_bow(self, field='vard', k=100000,cutoff=0,displaygraph=False):
+    def make_bow(self, field='vard', k=100000,cutoff=0,displaygraph=False,freqthresh=0):
         # turn corpus into a bag of words for a certain field - variant of make_hfw_dist()
 
-        sumdict = {}
-        corpussize = 0
-        df = self.get_dataframe()
-        df = df[df['LEMMA'] != 'NULL']
-        if self.lowercase and field == 'vard':
-            field = 'vard_lower'
-        for item in df[field]:
-            sumdict[item] = sumdict.get(item, 0) + 1  
-            #TO DO: store a list of indices as well as /as opposed to the number of occurrences 
-            corpussize += 1
+        if self.tagbag!=field:
+            self.sumdict = {}
+            corpussize = 0
+            df = self.get_dataframe()
+            df = df[df['LEMMA'] != 'NULL']
+            if self.lowercase and field == 'vard':
+                field = 'vard_lower'
+            for item in df[field]:
+                self.sumdict[item] = self.sumdict.get(item, 0) + 1
+                #TO DO: store a list of indices as well as /as opposed to the number of occurrences
+                corpussize += 1
 
-        print("Size of corpus is {}".format(corpussize))
-        candidates = sorted(sumdict.items(), key=operator.itemgetter(1), reverse=True)
-        if cutoff>0:
-            for cand,score in candidates[:cutoff]:
-                print("({},{}) : {}".format(cand,score,self.find_text(cand,field=field)))
-                #print("{}:{}".format(cand,score))
+            if freqthresh>0:
+                newdict={}
+                corpussize=0
+                for akey in self.sumdict.keys():
+                    value=self.sumdict[akey]
+                    if value>=freqthresh:
+                        newdict[akey]=value
+                        corpussize+=value
 
-        if displaygraph:
-            cf.display_list([(corpussize,candidates[:k])],cutoff=cutoff,xlabel=field+' (High Frequency)',colors=self.colors)
-        return corpussize, candidates[:k]
+                self.sumdict=newdict
+
+            print("Size of corpus is {}".format(corpussize))
+            candidates = sorted(self.sumdict.items(), key=operator.itemgetter(1), reverse=True)
+            if cutoff>0:
+                for cand,score in candidates[:cutoff]:
+                    print("({},{}) : {}".format(cand,score,self.find_text(cand,field=field)))
+                    #print("{}:{}".format(cand,score))
+
+            if displaygraph:
+                cf.display_list([(corpussize,candidates[:k])],cutoff=cutoff,xlabel=field+' (High Frequency)',colors=self.colors)
+            self.vocab=candidates[:k]
+            self.corpussize=corpussize
+            self.tagbag=field
+
+        return self.corpussize, self.vocab
 
     def find_text(self, semtag, field='SEMTAG3'):
         self.selected=[]
@@ -958,40 +1014,9 @@ class Viewer(SamuelsCorpus):
             featdicts = [self.get_pmimatrix_byrel(rel)[key] for key in keylist]
             xlabel = "{} co-occurring with {} vs {} in relation {}".format(field, keylist[0],keylist[1], rel)
 
-        allkeys = sorted(set(list(featdicts[0].keys()) + list(featdicts[1].keys())))
 
-        differences = []
-        absdiffs = []
-        products=[]
-        for akey in allkeys:
-            valueA=featdicts[0].get(akey,0)
-            valueB=featdicts[1].get(akey,0)
-            diff = valueA-valueB
-            differences.append((akey, diff))
-            absdiffs.append(abs(diff))
-            products.append((akey, valueA*valueB))
+        return compare_features(keylist,featdicts,displaygraph=displaygraph,cutoff=cutoff,colors=self.colors)
 
-        products=sorted(products,key=operator.itemgetter(1),reverse=True)[:cutoff]
-        print("Salient products")
-        print(products)
-        if displaygraph:
-            cf.display_list([(-1, products)], cutoff=cutoff, xlabel='Most salient features in intersection of {} and {}'.format(keylist[0],keylist[1]),
-                            ylabel='PPMI Score', colors=self.colors)
-
-        tokeep=sorted(absdiffs,reverse=True)[:cutoff]
-        candidates = []
-        print("Salient differences")
-        for (akey, diff) in differences:
-            if abs(diff) >= tokeep[-1]:
-                candidates.append((akey, diff))
-                print("({},{})".format(akey, diff))
-
-        if displaygraph:
-            cf.display_comp(candidates, leg=keylist,
-                            xlabel=xlabel,
-                            ylabel='Difference in PPMI Score', colors=None)
-
-        return candidates
 
     def find_similarity(self,key1,key2,rel=None,field='SEMTAG3',measure="dot"):
 
@@ -1003,7 +1028,9 @@ class Viewer(SamuelsCorpus):
             print("Error: can't find vectors for those tags and relation")
             return 0
 
-    def find_knn(self,key1,rel=None,field='SEMTAG3',measure='dot',k=10):
+    def find_knn(self,key1,rel=None,field='SEMTAG3',measure='dot',k=10,freqthresh=100):
+
+        _corpussize,candidates=self.make_bow(field=field,freqthresh=freqthresh)
         key1=self.match_tag(key1,field=field)
         if rel==None:
             pmi_matrix=self.get_pmimatrix()
@@ -1011,15 +1038,36 @@ class Viewer(SamuelsCorpus):
             pmi_matrix=self.get_pmimatrix_byrel(rel)
 
         sims=[]
-        for key2 in pmi_matrix.keys():
+        for (key2,freq) in candidates:
             try:
                 sims.append((key2,vectorsim(pmi_matrix[key1],pmi_matrix[key2],measure=measure)))
             except:
-                print("Error: can't find vector for {} in pmi_matrix for relation {}".format(key1,rel))
+                #print("Error: can't find vector for {} in pmi_matrix for relation {}".format(key2,rel))
+                pass
+
         #print(sims)
         candidates=sorted(sims,key=operator.itemgetter(1),reverse=True)
         return candidates[:k]
 
+    def allpairssims(self,rel=None,field='SEMTAG3',measure='dot',freqthresh=100):
+
+        if self.sims.get(rel,None)==None:
+
+            _corpussize,candidates=self.make_bow(field=field,freqthresh=freqthresh)
+            if rel==None:
+                pmi_matrix=self.get_pmimatrix()
+            else:
+                pmi_matrix=self.get_pmimatrix_byrel(rel)
+
+            self.sims[rel]={}
+            for (key1,freq1) in candidates:
+                self.sims[rel][key1]={}
+                for (key2,freq2) in candidates:
+                    try:
+                        self.sims[rel][key1][key2]=vectorsim(pmi_matrix[key1],pmi_matrix[key2],measure=measure)
+                    except:
+                        pass
+        return self.sims[rel]
 
     def get_best_features_all(self, cutoff=10):
         pmi_matrix=self.get_pmimatrix()
@@ -1052,6 +1100,7 @@ class Comparator:
         viewerdict={}
         for i,key in enumerate(self.filedict.keys()):
             viewerdict[key]=Viewer(self.filedict[key],colors=[self.colors[i]])
+
         return viewerdict
 
     def get_reference_viewer(self):
@@ -1080,34 +1129,69 @@ class Comparator:
 
         return distinctive_tags
 
+    def compare_features(self,key,field='SEMTAG3',rel=None):
+
+        vectors=[]
+        keylist=[]
+        for corpuskey,aviewer in self.viewerdict.items():
+
+            vectors.append(aviewer.get_vector(key,field=field,rel=rel))
+            keylist.append(corpuskey)
+
+        labellist=[key+" in "+x for x in keylist]
+
+        return compare_features(labellist,vectors)
+
     def find_similarity(self,key,field='SEMTAG3',measure='dot',rel=None):
 
-        v1=self.viewerdict.values(0).get_vector(key,field=field,rel=rel)
+        vectors = []
+        keylist = []
+        for corpuskey, aviewer in self.viewerdict.items():
+            vectors.append(aviewer.get_vector(key, field=field, rel=rel))
+            keylist.append(corpuskey)
 
-        v2=self.viewerdict.values(1).get_vector(key,field=field,rel=rel)
-        sim=vectorsim(v1,v2,measure=measure)
+
+        labellist = [key + " in " + x for x in keylist]
+        sim=vectorsim(vectors[0],vectors[1],measure=measure)
         return sim
 
-    def sim_changes(self,measure='dot',rel=None,k=10):
-        if rel==None:
-            mat1=self.viewerdict.values(0).get_pmimatrix()
-            mat2=self.viewerdict.values(1).get_pmimatrix()
-        else:
-            mat1=self.viewerdict.values(0).get_pmimatrix_byrel(rel)
-            mat2=self.viewerdict.values(1).get_pmimatrix_byrel(rel)
+    def sim_changes(self,field='SEMTAG3',measure='dot',rel=None,k=10,freqthresh=0,nvocab=100000):
+
+        mats=[]
+        keylist=[]
+        vocabs=[]
+
+        for corpuskey,aviewer in self.viewerdict.items():
+            keylist.append(corpuskey)
+            aviewer.make_bow(field=field)
+            vocabs.append(aviewer.sumdict)
+            if rel==None:
+                mats.append(aviewer.get_pmimatrix())
+
+            else:
+                mats.append(aviewer.get_pmimatrix_byrel(rel))
+
+        vocab=[]
+        for word in vocabs[0].keys():
+            f1=vocabs[0][word]
+            f2=vocabs[1].get(word,0)
+            if f1>freqthresh and f2>freqthresh:
+                vocab.append((word,f1+f2))
+
+        sortedvocab=sorted(vocab,key=operator.itemgetter(1),reverse=True)
 
         sims=[]
-        for tag in mat1.keys():
-            v1=mat1[tag]
-            v2=mat2.get(tag,{})
-            sims.append((tag,vectorsim(v1,v2,measure=measure)))
+        for (tag,freq) in sortedvocab[:nvocab]:
+            v1=mats[0].get(tag,{})
+            v2=mats[1].get(tag,{})
+            sims.append(((tag,freq),vectorsim(v1,v2,measure=measure)-0.5))
 
         candidates=sorted(sims,key=operator.itemgetter(1),reverse=True)
 
-        print("Most changed:")
+        print("Least changed:")
         print(candidates[:k])
         print("--------")
-        print("Least changed:")
+        print("Most changed:")
         print(candidates[-k:])
 
 
